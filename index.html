@@ -269,6 +269,8 @@
                 <button id="btnTimerStart">スタート</button>
                 <button id="btnTimerStop" class="secondary">ストップ</button>
                 <button id="btnTimerReset" class="danger">リセット / 音を止める</button>
+                <button id="btnSet5" class="secondary">5分</button>
+                <button id="btnSet25" class="secondary">25分</button>
             </div>
         </section>
     </div>
@@ -456,6 +458,20 @@
                 .filter(Boolean)
                 .forEach(name => addItem(name));
             input.value = '';
+        });
+
+        document.getElementById('btnSet5').addEventListener('click', () => {
+            selectMin.value = 5;
+            selectSec.value = 0;
+            remainingMs = 0;
+            updateTimerDisplay(5 * 60 * 1000);
+        });
+
+        document.getElementById('btnSet25').addEventListener('click', () => {
+            selectMin.value = 25;
+            selectSec.value = 0;
+            remainingMs = 0;
+            updateTimerDisplay(25 * 60 * 1000);
         });
 
         document.getElementById('btnAddItem').addEventListener('click', () => addItem());
