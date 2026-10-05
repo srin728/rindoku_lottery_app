@@ -273,9 +273,8 @@
                 <button id="btnSet25" class="secondary">25分</button>
             </div>
             <div class="description" style="text-align:center; margin-top:14px; margin-bottom:0;">
-                アラーム音源：Mozart, <i>Eine kleine Nachtmusik</i>, K. 525
-                （<a href="https://commons.wikimedia.org/wiki/Category:Audio_files_of_KV_525_by_Wolfgang_Amadeus_Mozart"
-                    target="_blank" rel="noopener noreferrer">Wikimedia Commons / Musopen</a>）
+                アラーム：Mozart, <i>Eine kleine Nachtmusik</i>, K. 525，
+                第1楽章・第1主題（第1–10小節，電子音）
             </div>
         </section>
     </div>
@@ -291,15 +290,40 @@
 
         let timerId = null;
         let remainingMs = 0;
-        let alarmAudio = null;
-        let alarmTrackIndex = 0;
+        let alarmCtx = null;
+        let alarmLoopTimeout = null;
         let alarmSession = 0;
 
-        const alarmTracks = [
-            'https://commons.wikimedia.org/wiki/Special:Redirect/file/Mozart_K525_Serenade_in_G_Major_1_-_Allegro.ogg',
-            'https://commons.wikimedia.org/wiki/Special:Redirect/file/Mozart_K525_Serenade_in_G_Major_2_-_Romance.ogg',
-            'https://commons.wikimedia.org/wiki/Special:Redirect/file/Mozart_K525_Serenade_in_G_Major_3_-_Minuet.ogg',
-            'https://commons.wikimedia.org/wiki/Special:Redirect/file/Mozart_K525_Serenade_in_G_Major_4_-_Rondo.ogg',
+        const ALARM_BPM = 148;
+        const ALARM_EIGHTH_SEC = 30 / ALARM_BPM;
+        const ALARM_LOOP_GAP_SEC = 0.8;
+
+        // Mozart, Eine kleine Nachtmusik, K. 525, I. Allegro.
+        // First subject (measures 1--10), encoded in eighth-note units.
+        // The melody follows the public-domain Mutopia first-violin score.
+        const ALARM_MAIN_THEME = [
+            // m. 1
+            ['G4', 2], [null, 1], ['D4', 1], ['G4', 2], [null, 1], ['D4', 1],
+            // m. 2
+            ['G4', 1], ['D4', 1], ['G4', 1], ['B4', 1], ['D5', 2], [null, 2],
+            // m. 3
+            ['C5', 2], [null, 1], ['A4', 1], ['C5', 2], [null, 1], ['A4', 1],
+            // m. 4
+            ['C5', 1], ['A4', 1], ['F#4', 1], ['A4', 1], ['D4', 2], [null, 2],
+            // m. 5
+            ['G4', 1], [null, 1], ['G4', 3], ['B4', 1], ['A4', 1], ['G4', 1],
+            // m. 6
+            ['G4', 1], ['F#4', 1], ['F#4', 3], ['A4', 1], ['C5', 1], ['F#4', 1],
+            // m. 7
+            ['A4', 1], ['G4', 1], ['G4', 3], ['B4', 1], ['A4', 1], ['G4', 1],
+            // m. 8
+            ['G4', 1], ['F#4', 1], ['F#4', 3], ['A4', 1], ['C5', 1], ['F#4', 1],
+            // m. 9
+            ['G4', 1], ['G4', 1], ['G4', 0.5], ['F#4', 0.5], ['E4', 0.5], ['F#4', 0.5],
+            ['G4', 1], ['G4', 1], ['B4', 0.5], ['A4', 0.5], ['G4', 0.5], ['A4', 0.5],
+            // m. 10
+            ['B4', 1], ['B4', 1], ['D5', 0.5], ['C5', 0.5], ['B4', 0.5], ['C5', 0.5],
+            ['D5', 2], [null, 2],
         ];
 
         /**
@@ -396,6 +420,7 @@
         function startTimer() {
             if (timerId) return;
             stopAlarm();
+            prepareAlarmAudio();
             if (remainingMs <= 0) {
                 remainingMs = (parseInt(selectMin.value) * 60 + parseInt(selectSec.value)) * 1000;
             }
@@ -427,50 +452,110 @@
             updateTimerDisplay(0);
         }
 
-        function startAlarm() {
-            if (alarmAudio) return;
+        function prepareAlarmAudio() {
+            if (!alarmCtx || alarmCtx.state === 'closed') {
+                alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
 
-            const session = ++alarmSession;
-            alarmTrackIndex = 0;
-
-            const playTrack = () => {
-                if (session !== alarmSession) return;
-
-                const audio = new Audio(alarmTracks[alarmTrackIndex]);
-                audio.preload = 'auto';
-                alarmAudio = audio;
-
-                audio.addEventListener('ended', () => {
-                    if (session !== alarmSession) return;
-                    alarmTrackIndex = (alarmTrackIndex + 1) % alarmTracks.length;
-                    playTrack();
-                }, { once: true });
-
-                audio.addEventListener('error', () => {
-                    if (session !== alarmSession) return;
-                    alarmTrackIndex = (alarmTrackIndex + 1) % alarmTracks.length;
-                    playTrack();
-                }, { once: true });
-
-                audio.play().catch(error => {
-                    console.error('アラーム音を再生できませんでした:', error);
+            if (alarmCtx.state === 'suspended') {
+                alarmCtx.resume().catch(error => {
+                    console.error('オーディオを開始できませんでした:', error);
                 });
+            }
+        }
+
+        function noteToFrequency(note) {
+            const match = /^([A-G])(#?)(\d)$/.exec(note);
+            if (!match) return 0;
+
+            const semitone = {
+                C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11,
+            }[match[1]] + (match[2] === '#' ? 1 : 0);
+            const midi = 12 * (parseInt(match[3]) + 1) + semitone;
+            return 440 * Math.pow(2, (midi - 69) / 12);
+        }
+
+        function scheduleElectronicNote(note, start, duration) {
+            if (!alarmCtx || note === null) return;
+
+            const frequency = noteToFrequency(note);
+            const soundingDuration = Math.max(0.04, duration * 0.88);
+            const attack = Math.min(0.008, soundingDuration * 0.12);
+            const release = Math.min(0.045, soundingDuration * 0.25);
+            const end = start + soundingDuration;
+
+            // Square-wave lead: intentionally electronic and clearly audible.
+            const lead = alarmCtx.createOscillator();
+            const leadGain = alarmCtx.createGain();
+            lead.type = 'square';
+            lead.frequency.setValueAtTime(frequency, start);
+            leadGain.gain.setValueAtTime(0, start);
+            leadGain.gain.linearRampToValueAtTime(0.055, start + attack);
+            leadGain.gain.setValueAtTime(0.055, Math.max(start + attack, end - release));
+            leadGain.gain.linearRampToValueAtTime(0, end);
+            lead.connect(leadGain);
+            leadGain.connect(alarmCtx.destination);
+            lead.start(start);
+            lead.stop(end + 0.01);
+
+            // Quiet triangle wave one octave lower gives the alarm a fuller synth sound.
+            const sub = alarmCtx.createOscillator();
+            const subGain = alarmCtx.createGain();
+            sub.type = 'triangle';
+            sub.frequency.setValueAtTime(frequency / 2, start);
+            subGain.gain.setValueAtTime(0, start);
+            subGain.gain.linearRampToValueAtTime(0.035, start + attack);
+            subGain.gain.setValueAtTime(0.035, Math.max(start + attack, end - release));
+            subGain.gain.linearRampToValueAtTime(0, end);
+            sub.connect(subGain);
+            subGain.connect(alarmCtx.destination);
+            sub.start(start);
+            sub.stop(end + 0.01);
+        }
+
+        function startAlarm() {
+            if (alarmLoopTimeout) return;
+
+            prepareAlarmAudio();
+            const session = ++alarmSession;
+            const phraseDuration = ALARM_MAIN_THEME.reduce(
+                (sum, [, eighths]) => sum + eighths * ALARM_EIGHTH_SEC,
+                0
+            );
+
+            const playTheme = () => {
+                if (session !== alarmSession || !alarmCtx || alarmCtx.state === 'closed') return;
+
+                const start = alarmCtx.currentTime + 0.03;
+                let offset = 0;
+
+                for (const [note, eighths] of ALARM_MAIN_THEME) {
+                    const duration = eighths * ALARM_EIGHTH_SEC;
+                    scheduleElectronicNote(note, start + offset, duration);
+                    offset += duration;
+                }
+
+                alarmLoopTimeout = setTimeout(
+                    playTheme,
+                    (phraseDuration + ALARM_LOOP_GAP_SEC) * 1000
+                );
             };
 
-            playTrack();
+            playTheme();
         }
 
         function stopAlarm() {
             alarmSession++;
 
-            if (alarmAudio) {
-                alarmAudio.pause();
-                alarmAudio.removeAttribute('src');
-                alarmAudio.load();
-                alarmAudio = null;
+            if (alarmLoopTimeout) {
+                clearTimeout(alarmLoopTimeout);
+                alarmLoopTimeout = null;
             }
 
-            alarmTrackIndex = 0;
+            if (alarmCtx) {
+                alarmCtx.close();
+                alarmCtx = null;
+            }
         }
 
         /**
