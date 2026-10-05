@@ -416,25 +416,61 @@
 
         function startAlarm() {
             if (alarmInterval) return;
+
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-            const playTone = () => {
-                const now = audioCtx.currentTime;
-                [0, 0.2, 0.4].forEach(delay => {
-                    const osc = audioCtx.createOscillator();
-                    const gain = audioCtx.createGain();
-                    osc.frequency.setValueAtTime(880, now + delay);
-                    gain.gain.setValueAtTime(0, now + delay);
-                    gain.gain.linearRampToValueAtTime(0.1, now + delay + 0.01);
-                    gain.gain.linearRampToValueAtTime(0, now + delay + 0.15);
-                    osc.connect(gain);
-                    gain.connect(audioCtx.destination);
-                    osc.start(now + delay);
-                    osc.stop(now + delay + 0.15);
+            // Mozart, Eine kleine Nachtmusik, K. 525, I. Allegro:
+            // opening four measures of the first theme.
+            const bpm = 148;
+            const beat = 60 / bpm;
+
+            const melody = [
+                // [frequency (Hz), duration (beats)]; null denotes a rest.
+                [392.00, 1.0], [null, 0.5], [293.66, 0.5], [392.00, 1.0], [null, 0.5], [293.66, 0.5],
+                [392.00, 0.5], [293.66, 0.5], [392.00, 0.5], [493.88, 0.5], [587.33, 1.0], [null, 1.0],
+                [523.25, 1.0], [null, 0.5], [440.00, 0.5], [523.25, 1.0], [null, 0.5], [440.00, 0.5],
+                [523.25, 0.5], [440.00, 0.5], [369.99, 0.5], [440.00, 0.5], [293.66, 1.0], [null, 1.0],
+            ];
+
+            const phraseDuration = melody.reduce((sum, [, beats]) => sum + beats * beat, 0);
+
+            const playMelody = () => {
+                if (!audioCtx || audioCtx.state === 'closed') return;
+
+                const start = audioCtx.currentTime;
+                let offset = 0;
+
+                melody.forEach(([frequency, beats]) => {
+                    const duration = beats * beat;
+
+                    if (frequency !== null) {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+
+                        // A triangle wave is softer than the previous alarm beep,
+                        // while retaining enough upper harmonics to remain audible.
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(frequency, start + offset);
+
+                        const attack = Math.min(0.015, duration * 0.15);
+                        const release = Math.min(0.05, duration * 0.2);
+                        gain.gain.setValueAtTime(0, start + offset);
+                        gain.gain.linearRampToValueAtTime(0.16, start + offset + attack);
+                        gain.gain.setValueAtTime(0.16, start + offset + Math.max(attack, duration - release));
+                        gain.gain.linearRampToValueAtTime(0, start + offset + duration);
+
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(start + offset);
+                        osc.stop(start + offset + duration);
+                    }
+
+                    offset += duration;
                 });
             };
-            playTone();
-            alarmInterval = setInterval(playTone, 1000);
+
+            playMelody();
+            alarmInterval = setInterval(playMelody, (phraseDuration + 0.5) * 1000);
         }
 
         function stopAlarm() {
