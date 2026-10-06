@@ -367,6 +367,7 @@
         const sliderSecValue = document.getElementById('sliderSecValue');
 
         let timerId = null;
+        let timerLastTick = null;
         let remainingMs = 0;
         let alarmCtx = null;
         let alarmLoopTimeout = null;
@@ -497,7 +498,7 @@
             return parseInt(selectMin.value) * 60 + parseInt(selectSec.value);
         }
 
-        function setTimerInputs(totalSec, updateRemaining = true) {
+        function updateTimerControls(totalSec) {
             const clamped = clampTimerSeconds(totalSec);
             const minutes = Math.floor(clamped / 60);
             const seconds = clamped % 60;
@@ -508,11 +509,25 @@
             sliderSec.value = seconds;
             sliderMinValue.textContent = `${minutes}分`;
             sliderSecValue.textContent = `${seconds}秒`;
+        }
 
-            if (updateRemaining) {
-                remainingMs = clamped * 1000;
-                updateTimerDisplay(remainingMs);
+        function setTimerInputs(totalSec) {
+            const clamped = clampTimerSeconds(totalSec);
+            remainingMs = clamped * 1000;
+            updateTimerControls(clamped);
+
+            // If the duration is changed while the timer is running, start
+            // measuring elapsed time from the moment of the change.
+            if (timerId) {
+                timerLastTick = Date.now();
             }
+
+            updateTimerDisplay(remainingMs);
+        }
+
+        function syncControlsToRemainingTime() {
+            updateTimerControls(Math.ceil(remainingMs / 1000));
+            updateTimerDisplay(remainingMs);
         }
 
         function syncFromSelects() {
@@ -525,14 +540,13 @@
         }
 
         function adjustTimer(secondsDelta) {
-            const baseSec = timerId
-                ? Math.ceil(remainingMs / 1000)
-                : configuredTimerSeconds();
+            const baseSec = Math.ceil(remainingMs / 1000);
             setTimerInputs(baseSec + secondsDelta);
         }
 
         function updateTimerDisplay(ms) {
-            const totalSec = Math.ceil(ms / 1000);
+            const safeMs = Math.max(0, ms);
+            const totalSec = Math.ceil(safeMs / 1000);
             const m = Math.floor(totalSec / 60);
             const s = totalSec % 60;
             document.getElementById('timerDisplay').textContent =
@@ -541,37 +555,55 @@
 
         function startTimer() {
             if (timerId) return;
+
             stopAlarm();
-            prepareAlarmAudio();
+
+            // A zero-duration timer should remain stopped and must not create
+            // an AudioContext unnecessarily.
             if (remainingMs <= 0) {
-                remainingMs = (parseInt(selectMin.value) * 60 + parseInt(selectSec.value)) * 1000;
+                setTimerInputs(configuredTimerSeconds());
             }
             if (remainingMs <= 0) return;
 
-            let lastTick = Date.now();
+            // Create/resume the AudioContext from the user's Start click so
+            // that the alarm can play when the countdown later reaches zero.
+            prepareAlarmAudio();
+
+            timerLastTick = Date.now();
             timerId = setInterval(() => {
-                const delta = Date.now() - lastTick;
-                lastTick = Date.now();
-                remainingMs -= delta;
+                const now = Date.now();
+                const delta = now - timerLastTick;
+                timerLastTick = now;
+                remainingMs = Math.max(0, remainingMs - delta);
+
                 if (remainingMs <= 0) {
                     remainingMs = 0;
                     stopTimer();
                     startAlarm();
+                    return;
                 }
+
                 updateTimerDisplay(remainingMs);
             }, 100);
         }
 
         function stopTimer() {
-            clearInterval(timerId);
-            timerId = null;
+            if (timerId) {
+                clearInterval(timerId);
+                timerId = null;
+            }
+            timerLastTick = null;
+
+            // When paused or completed, make the selectors and sliders match
+            // the displayed remaining time. Keep sub-second precision in
+            // remainingMs so that pause/resume does not add time.
+            syncControlsToRemainingTime();
         }
 
         function resetTimer() {
             stopTimer();
             stopAlarm();
-            remainingMs = 0;
-            updateTimerDisplay(0);
+            setTimerInputs(0);
         }
 
         function prepareAlarmAudio() {
@@ -705,12 +737,22 @@
         sliderMin.addEventListener('input', syncFromSliders);
         sliderSec.addEventListener('input', syncFromSliders);
 
-        document.getElementById('btnMinusMin').addEventListener('click', () => adjustTimer(-60));
-        document.getElementById('btnMinus10Sec').addEventListener('click', () => adjustTimer(-10));
-        document.getElementById('btnMinus1Sec').addEventListener('click', () => adjustTimer(-1));
-        document.getElementById('btnPlus1Sec').addEventListener('click', () => adjustTimer(1));
-        document.getElementById('btnPlus10Sec').addEventListener('click', () => adjustTimer(10));
-        document.getElementById('btnPlusMin').addEventListener('click', () => adjustTimer(60));
+        function adjustTimerFromButton(secondsDelta) {
+            const wasRunning = Boolean(timerId);
+            adjustTimer(secondsDelta);
+
+            if (wasRunning && remainingMs <= 0) {
+                stopTimer();
+                startAlarm();
+            }
+        }
+
+        document.getElementById('btnMinusMin').addEventListener('click', () => adjustTimerFromButton(-60));
+        document.getElementById('btnMinus10Sec').addEventListener('click', () => adjustTimerFromButton(-10));
+        document.getElementById('btnMinus1Sec').addEventListener('click', () => adjustTimerFromButton(-1));
+        document.getElementById('btnPlus1Sec').addEventListener('click', () => adjustTimerFromButton(1));
+        document.getElementById('btnPlus10Sec').addEventListener('click', () => adjustTimerFromButton(10));
+        document.getElementById('btnPlusMin').addEventListener('click', () => adjustTimerFromButton(60));
 
         document.getElementById('btnAddItem').addEventListener('click', () => addItem());
         document.getElementById('btnDraw').addEventListener('click', draw);
