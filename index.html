@@ -333,6 +333,8 @@
             <div class="timer-adjustments">
                 <button id="btnMinusMin" class="secondary">−1分</button>
                 <button id="btnMinus10Sec" class="secondary">−10秒</button>
+                <button id="btnMinus1Sec" class="secondary">−1秒</button>
+                <button id="btnPlus1Sec" class="secondary">＋1秒</button>
                 <button id="btnPlus10Sec" class="secondary">＋10秒</button>
                 <button id="btnPlusMin" class="secondary">＋1分</button>
             </div>
@@ -705,6 +707,8 @@
 
         document.getElementById('btnMinusMin').addEventListener('click', () => adjustTimer(-60));
         document.getElementById('btnMinus10Sec').addEventListener('click', () => adjustTimer(-10));
+        document.getElementById('btnMinus1Sec').addEventListener('click', () => adjustTimer(-1));
+        document.getElementById('btnPlus1Sec').addEventListener('click', () => adjustTimer(1));
         document.getElementById('btnPlus10Sec').addEventListener('click', () => adjustTimer(10));
         document.getElementById('btnPlusMin').addEventListener('click', () => adjustTimer(60));
 
