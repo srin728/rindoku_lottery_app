@@ -209,6 +209,56 @@
             color: var(--muted);
             font-weight: bold;
         }
+
+        .timer-sliders {
+            max-width: 600px;
+            margin: 0 auto 22px;
+        }
+
+        .timer-slider-row {
+            display: grid;
+            grid-template-columns: 48px 1fr 58px;
+            gap: 12px;
+            align-items: center;
+            margin: 10px 0;
+        }
+
+        .timer-slider-row label {
+            font-size: 0.9rem;
+            color: var(--muted);
+            font-weight: bold;
+            text-align: right;
+        }
+
+        .timer-slider-row input[type="range"] {
+            width: 100%;
+            padding: 0;
+            border: 0;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        .timer-slider-value {
+            font-variant-numeric: tabular-nums;
+            font-weight: bold;
+            text-align: right;
+            color: var(--text);
+        }
+
+        .timer-adjustments {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            margin: 0 0 22px;
+        }
+
+        .timer-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
     </style>
 </head>
 
@@ -263,9 +313,31 @@
                 </div>
             </div>
 
+            <div class="timer-sliders">
+                <div class="timer-slider-row">
+                    <label for="sliderMin">分</label>
+                    <input id="sliderMin" type="range" min="0" max="60" step="1" value="15"
+                        aria-label="分をスライダーで設定">
+                    <span id="sliderMinValue" class="timer-slider-value">15分</span>
+                </div>
+                <div class="timer-slider-row">
+                    <label for="sliderSec">秒</label>
+                    <input id="sliderSec" type="range" min="0" max="59" step="1" value="0"
+                        aria-label="秒をスライダーで設定">
+                    <span id="sliderSecValue" class="timer-slider-value">0秒</span>
+                </div>
+            </div>
+
             <div id="timerDisplay" class="timer-display">00:00</div>
 
-            <div style="display: flex; justify-content: center; gap: 10px;">
+            <div class="timer-adjustments">
+                <button id="btnMinusMin" class="secondary">−1分</button>
+                <button id="btnMinus10Sec" class="secondary">−10秒</button>
+                <button id="btnPlus10Sec" class="secondary">＋10秒</button>
+                <button id="btnPlusMin" class="secondary">＋1分</button>
+            </div>
+
+            <div class="timer-actions">
                 <button id="btnTimerStart">スタート</button>
                 <button id="btnTimerStop" class="secondary">ストップ</button>
                 <button id="btnTimerReset" class="danger">リセット / 音を止める</button>
@@ -287,6 +359,10 @@
         const drawResult = document.getElementById('drawResult');
         const selectMin = document.getElementById('selectMin');
         const selectSec = document.getElementById('selectSec');
+        const sliderMin = document.getElementById('sliderMin');
+        const sliderSec = document.getElementById('sliderSec');
+        const sliderMinValue = document.getElementById('sliderMinValue');
+        const sliderSecValue = document.getElementById('sliderSecValue');
 
         let timerId = null;
         let remainingMs = 0;
@@ -407,6 +483,50 @@
             opt.value = i;
             opt.textContent = i;
             selectSec.appendChild(opt);
+        }
+
+        const MAX_TIMER_SECONDS = 60 * 60 + 59;
+
+        function clampTimerSeconds(totalSec) {
+            return Math.max(0, Math.min(MAX_TIMER_SECONDS, Math.round(totalSec)));
+        }
+
+        function configuredTimerSeconds() {
+            return parseInt(selectMin.value) * 60 + parseInt(selectSec.value);
+        }
+
+        function setTimerInputs(totalSec, updateRemaining = true) {
+            const clamped = clampTimerSeconds(totalSec);
+            const minutes = Math.floor(clamped / 60);
+            const seconds = clamped % 60;
+
+            selectMin.value = minutes;
+            selectSec.value = seconds;
+            sliderMin.value = minutes;
+            sliderSec.value = seconds;
+            sliderMinValue.textContent = `${minutes}分`;
+            sliderSecValue.textContent = `${seconds}秒`;
+
+            if (updateRemaining) {
+                remainingMs = clamped * 1000;
+                updateTimerDisplay(remainingMs);
+            }
+        }
+
+        function syncFromSelects() {
+            setTimerInputs(configuredTimerSeconds());
+        }
+
+        function syncFromSliders() {
+            const totalSec = parseInt(sliderMin.value) * 60 + parseInt(sliderSec.value);
+            setTimerInputs(totalSec);
+        }
+
+        function adjustTimer(secondsDelta) {
+            const baseSec = timerId
+                ? Math.ceil(remainingMs / 1000)
+                : configuredTimerSeconds();
+            setTimerInputs(baseSec + secondsDelta);
         }
 
         function updateTimerDisplay(ms) {
@@ -571,18 +691,22 @@
         });
 
         document.getElementById('btnSet5').addEventListener('click', () => {
-            selectMin.value = 5;
-            selectSec.value = 0;
-            remainingMs = 0;
-            updateTimerDisplay(5 * 60 * 1000);
+            setTimerInputs(5 * 60);
         });
 
         document.getElementById('btnSet25').addEventListener('click', () => {
-            selectMin.value = 25;
-            selectSec.value = 0;
-            remainingMs = 0;
-            updateTimerDisplay(25 * 60 * 1000);
+            setTimerInputs(25 * 60);
         });
+
+        selectMin.addEventListener('change', syncFromSelects);
+        selectSec.addEventListener('change', syncFromSelects);
+        sliderMin.addEventListener('input', syncFromSliders);
+        sliderSec.addEventListener('input', syncFromSliders);
+
+        document.getElementById('btnMinusMin').addEventListener('click', () => adjustTimer(-60));
+        document.getElementById('btnMinus10Sec').addEventListener('click', () => adjustTimer(-10));
+        document.getElementById('btnPlus10Sec').addEventListener('click', () => adjustTimer(10));
+        document.getElementById('btnPlusMin').addEventListener('click', () => adjustTimer(60));
 
         document.getElementById('btnAddItem').addEventListener('click', () => addItem());
         document.getElementById('btnDraw').addEventListener('click', draw);
@@ -593,7 +717,8 @@
         });
         document.getElementById('btnTimerReset').addEventListener('click', resetTimer);
 
-        // 初期項目
+        // 初期状態
+        setTimerInputs(15 * 60);
         addItem('参加者A');
     </script>
 </body>
